@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ビンゴ的当て カウント</title>
+<style>
+  :root {
+    --bg: #f1f8e9;
+    --panel: #ffffff;
+    --ink: #203020;
+    --muted: #60745b;
+    --accent: #65a30d;
+    --hit: #b7e36b;
+    --hit-border: #6b9f1d;
+    --line: #cfe2b8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 22px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .app { width: min(100%, 1400px); min-height: calc(100vh - 44px); margin: 0 auto; display: flex; }
+  header { text-align: center; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); }
+  .subtitle { color: var(--muted); margin-top: 5px; }
+  .control-panel {
+    flex: 1;
+    min-height: calc(100vh - 44px);
+    display: grid;
+    grid-template-columns: 245px minmax(220px, 1fr) 175px;
+    grid-template-rows: minmax(245px, 1fr) 145px auto;
+    grid-template-areas:
+      "board timer remaining"
+      "trash controls score"
+      "status status status";
+    gap: 20px 28px;
+    align-items: center;
+    padding: clamp(22px, 3vw, 42px);
+    background: var(--panel);
+    border: 3px solid #a8c878;
+    border-radius: 22px;
+    box-shadow: 0 10px 28px rgba(77, 117, 28, .12);
+  }
+  .mini-board { grid-area: board; width: 100%; max-width: 245px; }
+  .board {
+    position: relative;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding: 7px;
+    border: 2px solid #a8c878;
+    border-radius: 8px;
+    background: #eff7e5;
+  }
+
+  .bingo-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .bingo-lines line {
+    stroke: #f97316;
+    stroke-width: 8;
+    stroke-linecap: round;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.35));
+  }
+  .bingo-lines line.outline {
+    stroke: #ffffff;
+    stroke-width: 14;
+    filter: none;
+  }
+  .cell {
+    aspect-ratio: 1;
+    border: 1px solid #a8c878;
+    border-radius: 4px;
+    background: #fbfff6;
+    color: #30452a;
+    font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+    font-weight: 800;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .cell.hit {
+    background: var(--hit);
+    border-color: var(--hit-border);
+    color: #124b2c;
+  }
+  .cell:disabled, .trash:disabled { cursor: not-allowed; opacity: .65; }
+  .timer-area { grid-area: timer; text-align: center; }
+  .timer-label, .remaining-label, .score-label {
+    color: var(--muted);
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+  }
+  .big-number {
+    font-size: clamp(5rem, 12vw, 8.5rem);
+    line-height: 1;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .035em;
+  }
+  .timer { color: #365b20; }
+  .remaining-area { grid-area: remaining; text-align: center; }
+  .remaining-number, .score-number {
+    font-size: clamp(4rem, 7.2vw, 5.8rem);
+    line-height: 1.05;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+  }
+  .remaining-number small, .score-number small {
+    font-size: 1.45rem;
+    margin-left: 5px;
+    font-weight: 800;
+  }
+  .remaining-label, .score-label {
+    font-size: 1.35rem;
+  }
+  .trash-area { grid-area: trash; display: flex; justify-content: center; }
+  .trash {
+    width: 185px;
+    min-height: 135px;
+    border: 3px solid #e05243;
+    border-radius: 14px;
+    background: #ffe0dc;
+    color: #a5261c;
+    box-shadow: 0 4px 0 #e9aaa3;
+    font-size: 3.3rem;
+    font-weight: 900;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .trash span { display: block; font-size: 1.15rem; font-weight: 900; color: #a5261c; }
+  .controls {
+    grid-area: controls;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  .control {
+    flex: 1;
+    max-width: 190px;
+    border: 0;
+    border-radius: 12px;
+    padding: 19px 10px;
+    font-size: clamp(.95rem, 2vw, 1.15rem);
+    font-weight: 900;
+    cursor: pointer;
+    color: white;
+    touch-action: manipulation;
+  }
+  #start { background: #65a30d; }
+  #stop { background: #d97706; }
+  #reset { background: #52733a; }
+  .score-area { grid-area: score; text-align: center; }
+  .score-caption { color: var(--muted); font-size: .78rem; font-weight: 700; }
+  .status {
+    grid-area: status;
+    min-height: 32px;
+    text-align: center;
+    font-weight: 800;
+    color: var(--muted);
+    display: grid;
+    place-items: center;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  .status.done { color: #b42318; }
+
+  .finish-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 22px;
+    background: rgba(15, 23, 42, .68);
+    backdrop-filter: blur(5px);
+  }
+  .finish-overlay.show { display: flex; }
+  .finish-card {
+    width: min(92vw, 680px);
+    padding: clamp(28px, 5vw, 54px);
+    border: 4px solid #a3cf55;
+    border-radius: 26px;
+    background: #fbfff6;
+    text-align: center;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .3);
+    animation: finishPop .22s ease-out;
+  }
+  .finish-icon { font-size: clamp(2.8rem, 7vw, 4.5rem); }
+  .finish-title {
+    margin-top: 8px;
+    color: #b42318;
+    font-size: clamp(2rem, 6vw, 3.6rem);
+    font-weight: 950;
+  }
+  .finish-message {
+    margin: 12px 0 28px;
+    color: #172033;
+    font-size: clamp(1.8rem, 5vw, 3.2rem);
+    font-weight: 900;
+  }
+  .finish-reset {
+    border: 0;
+    border-radius: 14px;
+    padding: 17px 26px;
+    background: #65a30d;
+    color: #fff;
+    font-size: clamp(1rem, 2.5vw, 1.25rem);
+    font-weight: 900;
+    cursor: pointer;
+  }
+  .finish-reset:active { transform: scale(.97); }
+  @keyframes finishPop {
+    from { opacity: 0; transform: scale(.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+\n  button:active:not(:disabled) { transform: scale(.97); }
+  @media (max-width: 700px) {
+    body { padding: 12px; }
+    .app { min-height: calc(100vh - 24px); }
+    .control-panel {
+      min-height: calc(100vh - 24px);
+      grid-template-columns: 160px minmax(0, 1fr) 125px;
+      grid-template-rows: minmax(185px, 1fr) 112px auto;
+      gap: 12px 10px;
+      padding: 14px;
+    }
+    .big-number { font-size: clamp(3.8rem, 10vw, 5.5rem); }
+    .remaining-number, .score-number { font-size: 3.5rem; }
+    .remaining-label, .score-label { font-size: 1.2rem; }
+    .remaining-number small, .score-number small { font-size: 1.2rem; }
+    .trash { width: 125px; min-height: 96px; font-size: 2.5rem; }
+    .control { padding: 13px 4px; }
+  }
+  @media (max-width: 460px) {
+    .app { min-height: auto; }
+    .control-panel {
+      min-height: calc(100vh - 24px);
+      grid-template-columns: 90px minmax(0, 1fr);
+      grid-template-rows: 110px 80px 80px auto;
+      grid-template-areas:
+        "board timer"
+        "remaining timer"
+        "trash controls"
+        "score score"
+        "status status";
+    }
+    .big-number { font-size: 3.4rem; }
+    .remaining-number, .score-number { font-size: 3rem; }
+    .remaining-label, .score-label { font-size: 1.1rem; }
+    .remaining-number small, .score-number small { font-size: 1rem; }
+    .score-area { display: flex; justify-content: center; align-items: baseline; gap: 12px; }
+    .score-caption { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="control-panel">
+    <section class="mini-board" aria-label="ビンゴの的">
+      <div class="board" id="board">
+        <button class="cell" data-cell="0" aria-label="1番">1</button>
+        <button class="cell" data-cell="1" aria-label="2番">2</button>
+        <button class="cell" data-cell="2" aria-label="3番">3</button>
+        <button class="cell" data-cell="3" aria-label="4番">4</button>
+        <button class="cell" data-cell="4" aria-label="5番">5</button>
+        <button class="cell" data-cell="5" aria-label="6番">6</button>
+        <button class="cell" data-cell="6" aria-label="7番">7</button>
+        <button class="cell" data-cell="7" aria-label="8番">8</button>
+        <button class="cell" data-cell="8" aria-label="9番">9</button>
+        <svg class="bingo-lines" id="bingoLines" viewBox="0 0 300 300" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </div>
+    </section>
+
+    <section class="timer-area" aria-label="残り時間">
+      <div class="timer-label">残り時間</div>
+      <div class="big-number timer" id="timer">00:45</div>
+    </section>
+
+    <section class="remaining-area" aria-label="残り投球数">
+      <div class="remaining-label">残り</div>
+      <div class="remaining-number"><span id="remaining">9</span><small>個</small></div>
+    </section>
+
+    <section class="trash-area">
+      <button class="trash" id="trash" aria-label="外れ">
+        🗑️
+        <span>外れ</span>
+      </button>
+    </section>
+
+    <section class="controls" aria-label="タイマー操作">
+      <button class="control" id="start">START</button>
+      <button class="control" id="stop">STOP</button>
+      <button class="control" id="reset">RESET</button>
+    </section>
+
+    <section class="score-area" aria-label="得点">
+      <div class="score-label">得点</div>
+      <div class="score-number"><span id="score">0</span><small>点</small></div>
+      <div class="score-caption">1ビンゴ＝1点</div>
+    </section>
+
+    <div class="status" id="status" role="status">STARTを押すとゲーム開始</div>
+  </main>
+</div>
+
+<div class="finish-overlay" id="finishOverlay" aria-hidden="true">
+  <div class="finish-card" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+    <div class="finish-icon">🏁</div>
+    <div class="finish-title" id="finishTitle">ゲーム終了！</div>
+    <div class="finish-message" id="finishMessage">0ビンゴ・0点</div>
+    <button class="finish-reset" id="finishReset">RESETして次のゲームへ</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const GAME_SECONDS = 45;
+  const MAX_THROWS = 9;
+  const cells = [...document.querySelectorAll(".cell")];
+  const bingoLinesSvg = document.getElementById("bingoLines");
+  const timerDisplay = document.getElementById("timer");
+  const remainingDisplay = document.getElementById("remaining");
+  const scoreDisplay = document.getElementById("score");
+  const statusDisplay = document.getElementById("status");
+  const trashButton = document.getElementById("trash");
+  const startButton = document.getElementById("start");
+  const stopButton = document.getElementById("stop");
+  const resetButton = document.getElementById("reset");
+  const finishOverlay = document.getElementById("finishOverlay");
+  const finishMessage = document.getElementById("finishMessage");
+  const finishReset = document.getElementById("finishReset");
+
+  let secondsLeft = GAME_SECONDS;
+  let remaining = MAX_THROWS;
+  let hits = Array(9).fill(false);
+  let running = false;
+  let finished = false;
+  let intervalId = null;
+
+  // 横3列・縦3列・斜め2列
+  const bingoLines = [
+    [0,1,2], [3,4,5], [6,7,8],
+    [0,3,6], [1,4,7], [2,5,8],
+    [0,4,8], [2,4,6]
+  ];
+
+  function bingoCount() {
+    return bingoLines.filter(line => line.every(index => hits[index])).length;
+  }
+
+  function updateDisplay() {
+    const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+    const ss = String(secondsLeft % 60).padStart(2, "0");
+    timerDisplay.textContent = `${mm}:${ss}`;
+    remainingDisplay.textContent = remaining;
+    scoreDisplay.textContent = bingoCount();
+
+    cells.forEach((cell, index) => {
+      cell.classList.toggle("hit", hits[index]);
+      cell.setAttribute("aria-pressed", String(hits[index]));
+      cell.disabled = !running || finished;
+    });
+
+    // Draw a line through the three cells for each completed bingo.
+    bingoLinesSvg.replaceChildren();
+    bingoLines.forEach(line => {
+      if (!line.every(index => hits[index])) return;
+      const centers = line.map(index => ({
+        x: 50 + (index % 3) * 100,
+        y: 50 + Math.floor(index / 3) * 100
+      }));
+      const [first, last] = [centers[0], centers[2]];
+
+      const outline = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      outline.setAttribute("class", "outline");
+      outline.setAttribute("x1", first.x);
+      outline.setAttribute("y1", first.y);
+      outline.setAttribute("x2", last.x);
+      outline.setAttribute("y2", last.y);
+      bingoLinesSvg.appendChild(outline);
+
+      const stroke = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      stroke.setAttribute("x1", first.x);
+      stroke.setAttribute("y1", first.y);
+      stroke.setAttribute("x2", last.x);
+      stroke.setAttribute("y2", last.y);
+      bingoLinesSvg.appendChild(stroke);
+    });
+
+    trashButton.disabled = !running || finished;
+    startButton.disabled = running || finished;
+  }
+
+  function finish(message) {
+    running = false;
+    finished = true;
+    clearInterval(intervalId);
+    intervalId = null;
+    statusDisplay.textContent = message;
+    statusDisplay.classList.add("done");
+    finishMessage.textContent = message.replace(/^終了！\s*/, "").replace(/^時間切れ！\s*/, "");
+    finishOverlay.classList.add("show");
+    finishOverlay.setAttribute("aria-hidden", "false");
+    updateDisplay();
+  }
+
+  function consumeThrow() {
+    if (!running || finished || remaining <= 0) return false;
+    remaining -= 1;
+    if (remaining === 0) {
+      // 最後の投球結果を反映してから終了
+      return true;
+    }
+    return true;
+  }
+
+  function handleThrow(index) {
+    if (!consumeThrow()) return;
+    hits[index] = true;
+    updateDisplay();
+
+    if (remaining === 0) {
+      finish(`終了！ ${bingoCount()}ビンゴ・${bingoCount()}点`);
+    } else {
+      statusDisplay.textContent = `的中！ 残り${remaining}回`;
+    }
+  }
+
+  cells.forEach((cell, index) => {
+    cell.addEventListener("click", () => handleThrow(index));
+  });
+
+  trashButton.addEventListener("click", () => {
+    if (!consumeThrow()) return;
+    updateDisplay();
+    if (remaining === 0) {
+      finish(`終了！ ${bingoCount()}ビンゴ・${bingoCount()}点`);
+    } else {
+      statusDisplay.textContent = `外れ！ 残り${remaining}回`;
+    }
+  });
+
+  startButton.addEventListener("click", () => {
+    if (running || finished) return;
+    running = true;
+    statusDisplay.classList.remove("done");
+    statusDisplay.textContent = "ゲーム中…";
+    updateDisplay();
+    intervalId = setInterval(() => {
+      if (!running || finished) return;
+      secondsLeft -= 1;
+      if (secondsLeft <= 0) {
+        secondsLeft = 0;
+        updateDisplay();
+        finish(`時間切れ！ ${bingoCount()}ビンゴ・${bingoCount()}点`);
+      } else {
+        updateDisplay();
+      }
+    }, 1000);
+  });
+
+  stopButton.addEventListener("click", () => {
+    if (!running || finished) return;
+    running = false;
+    clearInterval(intervalId);
+    intervalId = null;
+    statusDisplay.textContent = "一時停止中（STARTで再開）";
+    updateDisplay();
+  });
+
+  function resetGame() {
+    clearInterval(intervalId);
+    intervalId = null;
+    secondsLeft = GAME_SECONDS;
+    remaining = MAX_THROWS;
+    hits = Array(9).fill(false);
+    running = false;
+    finished = false;
+    statusDisplay.classList.remove("done");
+    statusDisplay.textContent = "STARTを押すとゲーム開始";
+    finishOverlay.classList.remove("show");
+    finishOverlay.setAttribute("aria-hidden", "true");
+    updateDisplay();
+  }
+
+  resetButton.addEventListener("click", resetGame);
+  finishReset.addEventListener("click", resetGame);
+
+  updateDisplay();
+})();
+</script>
+</body>
+</html>
